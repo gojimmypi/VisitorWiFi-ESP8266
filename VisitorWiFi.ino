@@ -33,9 +33,11 @@ const char* internetHostCheck = "gojimmypi-dev-imageconvert2bmp.azurewebsites.ne
 
 const char* targetHost = "gojimmypi-dev-imageconvert2bmp.azurewebsites.net"; // note this MUST be added to wifiAccessRedirect to avoid getting the captcha response!
 const char* accessHost = "1.1.1.1"; // 1.1.1.1 is typically the address of a Cisco WiFi guest Access Point. TODO extract from http response
-//const char* wifiAccessRedirect = "/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html%26ap_mac=00:11:22:33:44:55%26client_mac=cc:11:22:33:44:55%26wlan=Visitor%20WiFi%26redirect=www.google.com/";
 const char* wifiUserAgent = "User-Agent: Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; ASTE; rv:11.0) like Gecko";
 const int MAX_CONNECTION_TIMEOUT_MILLISECONDS = 8000;
+
+// for reference only:
+//const char* wifiAccessRedirect = "/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html%26ap_mac=00:11:22:33:44:55%26client_mac=cc:11:22:33:44:55%26wlan=Visitor%20WiFi%26redirect=www.google.com/";
 //const char* wifiAccessReferrer = "/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html&ap_mac=00:11:22:33:44:55&client_mac=cc:11:22:33:44:55&wlan=Visitor%20WiFi&redirect=www.google.com/";
 
 const String CrLf = "\n\r";
@@ -58,29 +60,29 @@ void setup() {
 
 
   // sometimes we seem to wait forever to connect, so after a bunch of attempts WiFi.begin again
-  // const int MAX_WIFI_ATTEMPTS = 100;
-  // int i = MAX_WIFI_ATTEMPTS;
-  //while (WiFi.status() != WL_CONNECTED) {
-	 // Serial.print("Connecting to ");
-	 // Serial.println(WIFI_SSID);
-	 // WiFi.begin(WIFI_SSID, WIFI_PWD);
-	 // while ((WiFi.status() != WL_CONNECTED) && (i > 0)) {
-		//  delay(500);
-		//  Serial.print(".");
-		//  i--;
-	 // }
-	 // Serial.println();
-  //}
+  const int MAX_WIFI_ATTEMPTS = 100;
+  int i = MAX_WIFI_ATTEMPTS;
+  while (WiFi.status() != WL_CONNECTED) {
+	  Serial.print("Connecting to ");
+	  Serial.println(WIFI_SSID);
+	  WiFi.begin(WIFI_SSID, WIFI_PWD);
+	  while ((WiFi.status() != WL_CONNECTED) && (i > 0)) {
+		  delay(500);
+		  Serial.print(".");
+		  i--;
+	  }
+	  Serial.println(CrLf + "Trying again....");
+  }
 
 
   // We start by connecting to a WiFi network
-  Serial.print("Connecting to ");
-  Serial.println(WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PWD);
-  while (WiFi.status() != WL_CONNECTED) {
-	  delay(500);
-	  Serial.print(".");
-  }
+  //Serial.print("Connecting to ");
+  //Serial.println(WIFI_SSID);
+  //WiFi.begin(WIFI_SSID, WIFI_PWD);
+  //while (WiFi.status() != WL_CONNECTED) {
+	 // delay(500);
+	 // Serial.print(".");
+  //}
 
   Serial.println("");
   Serial.println("WiFi connected");  
@@ -170,8 +172,8 @@ String getHeaderValue(String keyWord, String str) {
 	String keyText = keyWord;
 	String thisString = str;
 	String resultStr = "";
-	if (thisString.startsWith("\n")) { thisString = thisString.substring(1); }
-	if (thisString.startsWith("\r")) { thisString = thisString.substring(1); }
+	if (thisString.startsWith("\n")) { thisString = thisString.substring(1); } // we [read until \r] so the \n may come before or after the \r
+	if (thisString.startsWith("\r")) { thisString = thisString.substring(1); } 
 	thisString.trim();
 
 	keyText.trim();
@@ -217,6 +219,8 @@ uint ResponseContentLength = -1;
 //                  1 success, but with redirect
 //                  2 failed to connect
 //                  3 client timeout (see MAX_CONNECTION_TIMEOUT_MILLISECONDS)
+//                  4 out of memory (rare, but perhaps already running low on memory or unusually large header)
+//                  5 content to large to load (would be out of memory if content attempted to load)
 //**************************************************************************************************************
 int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 	int countReadResponseAttempts = 5; // this a is a somewhat arbitrary number, mainly to handle large HTML payloads
@@ -225,7 +229,7 @@ int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 
 	Serial.println("*****************************************************************"); 
 	Serial.print("Connecting to ");
-	Serial.println(thisHost); // e.g. www.google.com
+	Serial.println(thisHost); // e.g. www.google.com, no http, no path, just dns name
 
 	if (!client.connect(thisHost, thisPort)) {
 		Serial.println("connection failed");
@@ -241,7 +245,7 @@ int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 		Serial.println("Starting out of memory!");
 	}
 	else {
-		Serial.print("Memory heap size good: ");
+		Serial.print("Memory free heap: ");
 		Serial.println(ESP.getFreeHeap());
 	}
 
@@ -254,6 +258,7 @@ int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 		yield(); // give the OS a little breathing room 
 		if ((millis() - timeout) > MAX_CONNECTION_TIMEOUT_MILLISECONDS) {
 			Serial.println(">>> Client Timeout !");
+			client.flush();
 			client.stop();
 			return 3;
 		}
@@ -267,13 +272,15 @@ int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 		// Read all the lines of the reply from server and print them to Serial
 		while (client.available()) {
 			delay(1);
-			// we'll always incrementally read header, but we may not read content if it is too large.
+			// we'll always incrementally read header lines, but we may not read content if it is too large.
 			if ((!endOfHeader) || (ResponseContentLength < (ESP.getFreeHeap() - ESP_MIN_HEAP))) {
 				line = client.readStringUntil('\r'); // note that the char AFTER this is often a \n - but the documentation says to read until \r
 			}
 			else {
 				Serial.println("Content too large! Flushing client to discard Rx data...");
 				client.flush();
+				client.stop();
+				return 5; // abort, we cannot load this content
 			}
 
 			if (line.startsWith("Location: ") ) {
@@ -283,31 +290,29 @@ int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 				ResponseLocation = line.substring(11);
 			}
 
-			getHeaderValue("Content-Location", line, ResponseContentLocation);
-			getHeaderValue("Content-Length", line, ResponseContentLength);
-
 			yield(); // give the OS a little breathing room when loading large documents
 			if (ESP.getFreeHeap() > ESP_MIN_HEAP) {
 				Serial.print(".");
 				if (!endOfHeader) { 
-					getHeaderValue("Content-Length", line, ResponseContentLength); 
-					if (myDebugLevel >= 2) { thisResponseHeader += line; } // capture header only for debug level 2 or greater
+					// we only look for these values in the header, never the content!
+					getHeaderValue("Content-Location", line, ResponseContentLocation);
+					getHeaderValue("Content-Length", line, ResponseContentLength);
+					thisResponseHeader += line; // we always capture the full header, as it has interesting fields (e.g. length of content which might exceed our memory capacity!)
 				}
-				if ((endOfHeader)) { thisResponse += line; } // always capture the response
+				if (endOfHeader) { thisResponse += line; } // always capture the response once we reach the end of the header
 
-				if (line.length() <= 1) {
+				if (line.length() <= 1) { // the first blank line found signifies the separation between header and content
 					endOfHeader = true;
 				}
 			}
 			else {
 				Serial.print("!");
-				if (!isOutOfMemory) {
-					// show the error just once, but continue to read all the data (just don't save it)
-					thisResponse += CrLf + "Out of memory! " + CrLf;
-					Serial.print("Out of memory! Heap=");
-					Serial.println(ESP.getFreeHeap());
-					isOutOfMemory = true;
-				}
+				thisResponse += CrLf + "Out of memory! " + CrLf;
+				Serial.print("Out of memory! Heap=");
+				Serial.println(ESP.getFreeHeap());
+				isOutOfMemory = true;
+				client.flush();
+				return 4;
 			}
 
 			thisLineCount++;
@@ -320,6 +325,7 @@ int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 		delay(100); // give the OS a little breathing room when loading large documents
 	}
 	// END TIME SENSITIVE SECTION 
+
 	Serial.print("Found Response Content Length = ");
 	Serial.println(ResponseContentLength);
 	Serial.print("Found Response Content Location = ");
@@ -328,16 +334,10 @@ int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 	// take ResponseLocation that looks like http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html&ap_mac=00:11:22:33:44:55&client_mac=cc:11:22:33:44:55&wlan=Visitor%20WiFi&redirect=www.w3.org/
 	// then strip the http & host name, and urlencode for the accessRedirect
 	//
-	if (ResponseLocation.length() > 138 ) {   // make sure we have a minimum length REsponse Location string
+	if (ResponseLocation.length() > 138 ) { // make sure we have a minimum length REsponse Location string
 		accessRedirect = ResponseLocation;  // should contain full URL:  http://1.1.1.1/path?switchurl=... but we only want path?switchurl=...
-		//Serial.println("Step 1");
-		//Serial.println(accessRedirect);
 		accessRedirect.remove(0, 14);       // remove the first 14 characters that should be: http://1.1.1.1 TODO handle when different (longer?)
-		//Serial.println("Step 2");
-		//Serial.println(accessRedirect);
 		accessRedirect.replace("&", "%26"); // urlencode the ampersands
-		//Serial.println("Step 3");
-		//Serial.println(accessRedirect);
 	}
 	else {
 		// if there's no Location: value in header, we are likely not needing a redirect on the visitor WiFi
@@ -488,11 +488,11 @@ int doAcceptTermsAndConditions() {
 	Request += "DNT: 1\r\n";
 	Request += "If-Modified-Since: Mon 31 Oct 2016 23:28:25 GMT\r\n";
 	Request += "Content-Length: ";
-	Request += PostData.length();
-	Request += "\n";
+	Request += PostData.length(); // we need to say how long our posted data is
+	Request += "\n";              // linefeed after content length; not a blank line!
 	Request += "Host: " + String(accessHost) + "\r\n";
 	Request += "Connection: Keep-Alive\r\n";
-	Request += "\r\n";
+	Request += "\r\n"; // this is the blank line separating the header from the postback content
 	Request += PostData;
 
 	//Serial.print("Debug Halt! Waiting");
@@ -502,7 +502,7 @@ int doAcceptTermsAndConditions() {
 	//}
 
 	// send the response, accepting the terms and conditions. the result should be we are granted access!
-	htmlSend(accessHost, 80, Request);
+	//htmlSend(accessHost, 80, Request);
 
 
 	Serial.println("\r\n");
@@ -528,7 +528,7 @@ int doAcceptTermsAndConditions() {
 	//Request += "\r\n"; // blank line before content
 	//Request += String(PostData);
 
-	//htmlSend(accessHost, 80, Request);
+	htmlSend(accessHost, 80, Request);
 
 	//Serial.println("\r\n");
 
