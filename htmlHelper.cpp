@@ -1,7 +1,12 @@
 #include "htmlHelper.h"
 
+// htmlHelper - library of utility functions to aid in parsing headers, query strings, etc.
 // 
+// most of the helpers can be re-used, however they were created primarily for the programmatic acceptance of terms and conditions
+// found on some (Cisco) guest WiFi access points; see doAcceptTermsAndConditions() 
 // 
+// TODO - finish moving code to the htmlHelper class, pass WiFiClient by reference.
+//
 // 
 // example of good header, ready to connect:
 //
