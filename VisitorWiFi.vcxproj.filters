@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="VisitorWiFi.ino" />
+    <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.VisitorWiFi.vsarduino.h">
