@@ -1,3 +1,5 @@
+#include "htmlHelper.h"
+
 // 
 // 
 // 
@@ -17,16 +19,13 @@
 // example of header on visitor wifi, needing to accept "Terms and Conditions"
 //
 //  HTTP/1.1 200 OK
-//  Location: http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html&ap_mac=00:3a:7d:13:aa:80&client_mac=5c:cf:7f:23:95:59&wlan=County%20Visitor%20WiFi&redirect=gojimmypi-dev-imageconvert2bmp.azurewebsites.net/
+//  Location: http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html&ap_mac=00:11:22:33:44:55&client_mac=11:22:33:44:55:66&wlan=My%20Visitor%20WiFi&redirect=www.google.com/
 //  Content-Type: text/html
 //  Content-Length: 474
 //
 //
-//  <HTML><HEAD><TITLE> Web Authentication Redirect</TITLE><META http-equiv="Cache-control" content="no-cache"><META http-equiv="Pragma" content="no-cache"><META http-equiv="Expires" content="-1"><META http-equiv="refresh" content="1; URL=http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html&ap_mac=00:3a:7d:13:aa:80&client_mac=5c:cf:7f:23:95:59&wlan=County%20Visitor%20WiFi&redirect=gojimmypi-dev-imageconvert2bmp.azurewebsites.net/"></HEAD></HTML>
+//  <HTML><HEAD><TITLE> Web Authentication Redirect</TITLE><META http-equiv="Cache-control" content="no-cache"><META http-equiv="Pragma" content="no-cache"><META http-equiv="Expires" content="-1"><META http-equiv="refresh" content="1; URL=http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.htmlap_mac=00:11:22:33:44:55&client_mac=11:22:33:44:55:66&wlan=My%20Visitor%20WiFi&redirect=www.google.com/"></HEAD></HTML>
 
-
-
-#include "htmlHelper.h"
 
 WiFiClient client;
 // Use WiFiClient class to create TCP connections
@@ -55,24 +54,43 @@ const String CrLf = "\n\r";
 const int MAX_CONNECTION_TIMEOUT_MILLISECONDS = 8000;
 
 class htmlHelper {
+	WiFiClient* myClient;
 	const char* thisHost; 
 	int thisPort; 
 	String sendHeader;
 
 public:
-	htmlHelper(const char*, int, String);
+	htmlHelper(WiFiClient*, const char*, int, String);
+	htmlHelper(WiFiClient*, const char*, int);
 	int Send();
 };
+
+
 
 int htmlHelper::Send() {
 	htmlSend(thisHost, thisPort, sendHeader); //const char* thisHost, int thisPort, String sendHeader
 }
 
-htmlHelper::htmlHelper(const char* Host, int Port, String Header) {
+// basic helper
+htmlHelper::htmlHelper(WiFiClient* thisClient, const char* Host, int Port) {
+	myClient = thisClient;
 	thisHost = Host;
 	thisPort = Port;
+}
+
+// helper with initial HTML header to send
+htmlHelper::htmlHelper(WiFiClient* thisClient, const char* Host, int Port, String Header) {
+	htmlHelper(thisClient, Host, Port);
 	sendHeader = Header;
 }
+
+String htmlBasicHeaderText(String verb, const char* targetHost, String targetUrl) {
+	return verb + " http://" + String(targetHost) + targetUrl + " HTTP/1.1\r\n" +
+		"Host: " + String(targetHost) + "\r\n" +
+		"Content-Encoding: identity" + "\r\n" +
+		"Connection: Keep-Alive\r\n\r\n";
+}
+
 
 //**************************************************************************************************************
 // return the html query string value in urlString that was specified in keyString
@@ -372,6 +390,28 @@ int htmlSend(const char* thisHost, int thisPort, String sendHeader) {
 
 int doAcceptTermsAndConditions() {
 	//**************************************************************************************************************
+	// when we make the original request, if we've not pressed the "I accept the terms" button yet, 
+	// we'll get a page reponse like this when visiting a web page:
+	//
+	// HTTP/1.1 200 OK
+	// Location: http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html&ap_mac=00:11:22:33:44:55&client_mac=11:22:33:44:55:66&wlan=My%20Visitor%20WiFi&redirect=www.google.com/
+	// Content-Type: text/html
+	// Content-Length: 440
+	//
+	// <HTML><HEAD><TITLE> Web Authentication Redirect</TITLE>
+	// <META http-equiv="Cache-control" content="no-cache">
+	// <META http-equiv="Pragma" content="no-cache">
+	// <META http-equiv="Expires" content="-1">
+	// <META http-equiv="refresh" content="1; URL=http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.htmlap_mac=00:11:22:33:44:55&client_mac=11:22:33:44:55:66&wlan=My%20Visitor%20WiFi&redirect=www.google.com/">
+	// </HEAD></HTML>
+	// 
+	// assumes the access point is called My Visitor Wifi, and we are trying to connect to google.com
+	//
+	// in particular, note the META refresh redirector.  TODO: programmatically extract the META redirect path
+	//**************************************************************************************************************
+
+
+	//**************************************************************************************************************
 	// fetch the custom.js code; this is the interesting stuff that handles the web page button pressing
 	// (this is what we need to emulate here, with no button and no button presser!)
 	//
@@ -426,13 +466,13 @@ int doAcceptTermsAndConditions() {
 	htmlSend(accessHost, 80, htmlString);
 
 	delay(5000); // here we are spending 5 seconds reading the terms and conditions.
+	//
+	//**************************************************************************************************************
 
-				 //**************************************************************************************************************
-
-				 //**************************************************************************************************************
-				 // The post back (note it is actually a GET, with query-string parameters; thanks fiddler app for this!)
-				 //**************************************************************************************************************
-				 // 
+	//**************************************************************************************************************
+	// The post back (note it is actually a GET, with query-string parameters; thanks fiddler app for this!)
+	//**************************************************************************************************************
+	// 
 	PostData = "buttonClicked=4&redirect_url=" + String(internetHostCheck);
 	Request = ""; // init request
 
@@ -465,11 +505,11 @@ int doAcceptTermsAndConditions() {
 	Request += "\r\n"; // this is the blank line separating the header from the postback content
 	Request += PostData;
 
-	Serial.print("Debug Halt! Waiting");
-	while (1) {
-		Serial.print(".");
-		delay(90000000);
-	}
+	//Serial.print("Debug Halt! Waiting");
+	//while (1) {
+	//	Serial.print(".");
+	//	delay(90000000);
+	//}
 
 	// send the response, accepting the terms and conditions. the result should be we are granted access!
 	//htmlSend(accessHost, 80, Request);
@@ -477,26 +517,7 @@ int doAcceptTermsAndConditions() {
 
 	Serial.println("\r\n");
 
-
-
-	//PostData = "buttonClicked=4&redirect_url=www.google.com";
-	//Request = "";
-	//Request += "GET http://" + String(accessHost) + "/login.html?buttonClicked=4&redirect_url=www.google.com HTTP/1.1\r\n";
-	//Request += "Host: " + String(accessHost) + "\r\n";
-	//// Request += "Accept: text/html, application/xhtml+xml, */*\r\n";
-	//// Request += "Referer: http://" + String(accessHost) + "/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html&ap_mac=00:11:22:33:44:55&client_mac=cc:11:22:33:44:55&wlan=Visitor%20WiFi&redirect=www.google.com/" + "\r\n";
-	//Request += "Referer: http://" + String(accessHost) + String(wifiAccessRedirect) + "\r\n";
-	//
-	//Request += "Accept-Language: en-US\r\n";
-	//Request += String(wifiUserAgent) + "\r\n"; // "User-Agent: Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; ASTE; rv:11.0) like Gecko\r\n";
-	//Request += "DNT: 1\r\n"; // Do Not Track (1 = tracking preference is enabled)
-	//Request += "If-Modified-Since: Tue 1 Nov 2016 23:28:25 GMT\r\n"; // TODO put in recent current date
-	//Request += "Content-Length: ";
-	//Request += PostData.length();
-	//Request += "\n";
 	//Request += "Connection: close\r\n";
-	//Request += "\r\n"; // blank line before content
-	//Request += String(PostData);
 
 	htmlSend(accessHost, 80, Request);
 
@@ -527,3 +548,48 @@ int doAcceptTermsAndConditions() {
 	return 0;
 }
 
+//**************************************************************************************************************
+//  confirmedInternetConnectivity - return 0 if we are able to connect to host and retrieve data
+//
+//  note the added complexity of poetentially being redirected to the WiFi Visitor Access, needing
+//  to programatically accept the terms and conditions.
+//**************************************************************************************************************
+int confirmedInternetConnectivity(const char* host) {
+	// This will send the request to the server
+	String htmlString;
+//	const char* internetHostCheck = "gojimmypi-dev-imageconvert2bmp.azurewebsites.net"; // some well known, reliable internet url (ideally small html payload)
+
+																						//htmlString = String("GET http://") + String(internetHostCheck) + url + " HTTP/1.1\r\n" +
+																						// "Host: " + String(internetHostCheck) + "\r\n" +
+																						// "Content-Encoding: identity" + "\r\n" +
+																						// "Connection: Keep-Alive\r\n\r\n";
+																						//Serial.println("htmlString:");
+																						//Serial.println(htmlString);
+
+	htmlString = htmlBasicHeaderText("GET", host, "/");
+	Serial.println("new htmlString:");
+	Serial.println(htmlString);
+
+	int connectionStatus = htmlSend(host, 80, htmlString);
+	if (connectionStatus == 0) {
+		Serial.println("Connected to internet!");
+	}
+	else if (connectionStatus == 1) {
+		Serial.println("Accepting Terms and Conditions...");
+
+		//	  Serial.print("ResponseLocation=");
+		//	  Serial.println(ResponseLocation);
+
+		// Serial.println();
+
+		//	  Serial.print("ap_mac queryStringValue=");
+		//	  Serial.print(queryStringValue(ResponseLocation, "ap_mac"));
+
+		doAcceptTermsAndConditions();
+	}
+	else {
+		Serial.println("Error connecting.");
+		return 1;
+	}
+
+};

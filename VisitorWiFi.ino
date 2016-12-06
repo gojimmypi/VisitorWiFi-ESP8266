@@ -99,63 +99,57 @@ void loop() {
 
 
   //**************************************************************************************************************
-  // when we make the original request, if we've not pressed the "I accept the terms" button yet, 
-  // we'll get a page reponse like this when visiting a web page:
-  //
-  // HTTP/1.1 200 OK
-  // Location: http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.html&ap_mac=00:11:22:33:44:55&client_mac=11:22:33:44:55:66&wlan=My%20Visitor%20WiFi&redirect=www.google.com/
-  // Content-Type: text/html
-  // Content-Length: 440
-  //
-  // <HTML><HEAD><TITLE> Web Authentication Redirect</TITLE>
-  // <META http-equiv="Cache-control" content="no-cache">
-  // <META http-equiv="Pragma" content="no-cache">
-  // <META http-equiv="Expires" content="-1">
-  // <META http-equiv="refresh" content="1; URL=http://1.1.1.1/fs/customwebauth/login.html?switch_url=http://1.1.1.1/login.htmlap_mac=00:11:22:33:44:55&client_mac=11:22:33:44:55:66&wlan=My%20Visitor%20WiFi&redirect=www.google.com/">
-  // </HEAD></HTML>
-  // 
-  // assumes the access point is called My Visitor Wifi, and we are trying to connect to google.com
-  //
-  // in particular, note the META refresh redirector.  TODO: programmatically extract the META redirect path
-  //**************************************************************************************************************
-
-  //**************************************************************************************************************
 
   // This will send the request to the server
   String htmlString;
   const char* internetHostCheck = "gojimmypi-dev-imageconvert2bmp.azurewebsites.net"; // some well known, reliable internet url (ideally small html payload)
 
-  htmlString = String("GET http://") + String(internetHostCheck) + url + " HTTP/1.1\r\n" +
-	  "Host: " + String(internetHostCheck) + "\r\n" +
-	  "Content-Encoding: identity" + "\r\n" +
-	  "Connection: Keep-Alive\r\n\r\n";
+
+  if (confirmedInternetConnectivity(internetHostCheck) == 0) {
+	  Serial.println("Successfully connected!");
+  }
+
 
   //htmlHelper myHtmlHelper = new htmlHelper(targetHost, 80, htmlString);
   //int connectionStatus = myHtmlHelper.Send();
 
 
 
-  int connectionStatus = htmlSend(internetHostCheck, 80, htmlString);
-  if (connectionStatus == 0) {
-	  Serial.println("Connected to internet!");
-  }
-  else if (connectionStatus == 1) {
-	  Serial.println("Accepting Terms and Conditions...");
+  //htmlString = String("GET http://") + String(internetHostCheck) + url + " HTTP/1.1\r\n" +
+	 // "Host: " + String(internetHostCheck) + "\r\n" +
+	 // "Content-Encoding: identity" + "\r\n" +
+	 // "Connection: Keep-Alive\r\n\r\n";
+  //Serial.println("htmlString:");
+  //Serial.println(htmlString);
 
-//	  Serial.print("ResponseLocation=");
-//	  Serial.println(ResponseLocation);
+  htmlString = htmlBasicHeaderText("GET", internetHostCheck, url);
+  Serial.println("new htmlString:");
+  Serial.println(htmlString);
 
-	  Serial.println();
 
-//	  Serial.print("ap_mac queryStringValue=");
-//	  Serial.print(queryStringValue(ResponseLocation, "ap_mac"));
 
-	  doAcceptTermsAndConditions();
-  }
-  else {
-	  Serial.println("Error connecting.");
-	  delay(500000);
-  }
+// moved to htmlHelper in confirmedInternetConnectivity
+//  int connectionStatus = htmlSend(internetHostCheck, 80, htmlString);
+//  if (connectionStatus == 0) {
+//	  Serial.println("Connected to internet!");
+//  }
+//  else if (connectionStatus == 1) {
+//	  Serial.println("Accepting Terms and Conditions...");
+//
+////	  Serial.print("ResponseLocation=");
+////	  Serial.println(ResponseLocation);
+//
+//	  Serial.println();
+//
+////	  Serial.print("ap_mac queryStringValue=");
+////	  Serial.print(queryStringValue(ResponseLocation, "ap_mac"));
+//
+//	  doAcceptTermsAndConditions();
+//  }
+//  else {
+//	  Serial.println("Error connecting.");
+//	  delay(500000);
+//  }
 
 
 
